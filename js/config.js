@@ -103,7 +103,7 @@ const config = {
       }
     ]
   },
-scene: [Preloader,Example]
+scene: [MainMenu,Prologue,Preloader,Example]
 }
 
 window.addEventListener('load', () => {

@@ -1,53 +1,78 @@
-class Background {
-  constructor(scene, textures, x = 0, y = 0, scaleX = 1, scaleY = 1) {
+class ParallaxBackground {
+  constructor(scene) {
     this.scene = scene;
-    this.textures = textures; // Array of textures
-    this.x = x;
-    this.y = y;
-    this.scaleX = scaleX;
-    this.scaleY = scaleY;
-    this.baseSpeed = 2; // Base speed for the furthest layer
+    this.width = 15088; // Width of your background
+    this.height = 1056; // Height of your background
 
-    this.sprites = []; // Array to hold multiple tileSprites
-    this.createBackgrounds();
+    // Create background layers
+    this.background = this.scene.add
+      .image(0, 0, "ForestBackground")
+      .setOrigin(0, 0)
+      .setScale(0.8)
+      .setScrollFactor(0.1);
+    // Midground with dynamic scaling
+    this.midground = this.scene.add
+      .image(0, this.scene.scale.height, "ForestMidground")
+      .setOrigin(0, 1);
+    this.adjustMidgroundScale();
+    this.midground.setDepth(4);
+    // Foreground with dynamic scaling
+    this.foreground = this.scene.add
+      .image(0, this.scene.scale.height, "ForestForeground")
+      .setOrigin(0, 1);
+    this.adjustForegroundScale();
+    this.foreground.setDepth(5000);
+    // Game objects container
+    this.gameObjects = this.scene.add.group();
   }
 
-  createBackgrounds() {
-    let depth = -this.textures.length;
-
-    // Create a tileSprite for each texture
-    this.textures.forEach((texture, index) => {
-      let spriteY = this.y;
-      let spriteDepth = depth + index;
-      let spriteScaleY = this.scaleY;
-      
-     // If it's the last image, set depth to 1000 and adjust Y position
-      if (index === this.textures.length - 1) {
-        spriteDepth = 1000;
-        let spriteHeight = this.scene.sys.canvas.height / this.scaleY;
-        spriteY = 0;
-        spriteScaleY = 1; // Keep the scale for the last image as 1 to touch the base
-      }
-
-      let sprite = this.scene.add.tileSprite(this.x, spriteY, this.scene.sys.canvas.width, this.scene.sys.canvas.height, texture);
-      sprite.setOrigin(0, 0);
-      sprite.setScale(this.scaleX, spriteScaleY);
-      sprite.setDepth(spriteDepth);
-
-      this.sprites.push(sprite);
-    });
+  adjustMidgroundScale() {
+    let midgroundHeight = this.midground.texture.getSourceImage().height;
+    let scaleFactor = this.scene.scale.height / midgroundHeight;
+    this.midground.setScale(scaleFactor);
+    this.midground.setScrollFactor(1, scaleFactor);
   }
 
-  update(cursors, speed) {
-    this.sprites.forEach((sprite, index) => {
-      let speedModifier = 1 + (index * 0.9); // Speed increases with each layer
-      let effectiveSpeed = this.baseSpeed * speedModifier * (speed/1.5);
+  adjustForegroundScale() {
+    let foregroundHeight = this.foreground.texture.getSourceImage().height;
+    let scaleFactor = this.scene.scale.height / foregroundHeight;
+    this.foreground.setScale(scaleFactor);
+    this.foreground.setScrollFactor(2, scaleFactor);
+  }
 
-      if (cursors.left.isDown) {
-        sprite.tilePositionX -= effectiveSpeed;
-      } else if (cursors.right.isDown) {
-        sprite.tilePositionX += effectiveSpeed;
-      }
-    });
+  // Modified method to spawn game objects with options for static and passable properties
+  spawnGameObject(
+    x,
+    y,
+    texture,
+    frame,
+    isStatic = false,
+    passable = false,
+    scale = 1,
+    depth = 5
+  ) {
+    let gameObjectOptions = { isStatic: isStatic };
+
+    // If the object is passable, make it a sensor
+    if (passable) {
+      gameObjectOptions.isSensor = true;
+    }
+
+    let gameObject = this.scene.matter.add.sprite(
+      x,
+      y,
+      texture,
+      frame,
+      gameObjectOptions
+    );
+    gameObject.setDepth(depth); // Between the player and midground
+    gameObject.setScale(scale);
+
+    // Disable collision, if passable
+    if (passable) {
+      gameObject.setCollisionCategory(0);
+    }
+
+    this.gameObjects.add(gameObject);
   }
 }

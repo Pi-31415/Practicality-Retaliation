@@ -1,8 +1,14 @@
 class Player {
   constructor(scene, x, y, texture, frame) {
+    // Debug mode flag
+    this.debugMode = false;
+    this.debugText = null; // For storing the debug text object
     this.scene = scene;
     this.sprite = scene.matter.add.sprite(x, y, texture, frame);
     this.sprite.setDepth(100);
+    // Ensure sprite is dynamic (not static)
+    this.sprite.setStatic(false);
+
     // Setup animations for the player
     this.setupAnimations();
 
@@ -18,16 +24,35 @@ class Player {
     // Modify the update method to broadcast the player's speed
     this.speed = 0;
 
+    this.isJumpingForward = false; // New flag for jump_forward state
+
     // Walking and running
     this.isWalking = false;
     this.walkStartTime = 0;
     this.runThreshold = 1000; // milliseconds threshold for running
+    // Debugging - Enable this to see physics bodies
   }
-  
+
   //Adjust Colors
   // Set the tint of the player's sprite
   setTint(color) {
     this.sprite.setTint(color);
+  }
+  
+   // Method to toggle debug mode
+  toggleDebugMode() {
+    this.debugMode = !this.debugMode;
+console.log(`Debug mode: ${this.debugMode}`); // Add this line for debugging
+
+    // Create or destroy the debug text based on the debug mode
+    if (this.debugMode) {
+      this.debugText = this.scene.add.text(100, 100, 'asdasd', { fontSize: '16px', fill: '#FFF' });
+      this.debugText.setScrollFactor(0); // Make sure the text doesn't scroll with the camera
+      this.debugText.setDepth(100);
+    } else if (this.debugText) {
+      this.debugText.destroy();
+      this.debugText = null;
+    }
   }
 
   // Adjust the brightness of the player's sprite
@@ -96,7 +121,7 @@ class Player {
     });
 
     this.scene.atlasLoader.createAnimation("jump_forward", "pi", {
-      start: 0,
+      start: 30,
       end: 84,
       zeroPad: 4,
       prefix: "jump_forward/Image Sequence_019_",
@@ -104,65 +129,111 @@ class Player {
       frameRate: 30,
       repeat: 0,
     });
+
+    // Prevent the sprite from going to sleep
+    this.sprite.setSleepThreshold(Infinity);
   }
 
   getSpeed() {
     return this.speed;
   }
+  
+  // Method to probabilistically initiate a jump
+probabilisticJump(probability,isJumping,isMoving) {
+  // Generate a random number between 0 and 1
+  const randomNum = Math.random();
+  // Check if the random number is less than the specified probability
+  if (randomNum < probability) {
+    // Trigger the jump
+    this.initiateJump(isJumping,isMoving);
+  }
+}
+
+  // Method to initiate a jump
+initiateJump(isJumping,isMoving) {
+   // Jump Logic
+ if (!this.isJumping) {
+    this.isJumping = true;
+    let jumpAnimation = isMoving ? "jump_forward" : "jump";
+    this.isJumpingForward = isMoving; // Set flag if jumping forward
+
+    this.sprite.anims.play(jumpAnimation, true);
+    this.speed = isMoving ? 9 : 1; // Adjust speed based on jump type
+
+    // Tween for jumping
+    let jumpHeight = isMoving ? 300 : 200;
+    this.scene.tweens.add({
+      targets: this.sprite,
+      y: this.sprite.y - jumpHeight,
+      ease: "Power1",
+      duration: 500,
+      yoyo: true, // Move back down
+      onComplete: () => {
+        this.isJumping = false;
+        if (isMoving) {
+          this.sprite.anims.play(this.isRunning ? "run" : "walk", true);
+        } else {
+          this.sprite.anims.play("idle", true);
+        }
+      },
+    });
+  }
+}
 
   update() {
     const isMoving = this.cursors.left.isDown || this.cursors.right.isDown;
+    const isJumping = this.cursors.space.isDown;
     const currentTime = this.scene.time.now;
 
-    if (this.cursors.space.isDown && !this.isJumping) {
-      this.isJumping = true;
-
-      if (isMoving) {
-        // Jump forward animation when arrow key is held down
-        this.sprite.anims.play("jump_forward", true);
-
-        this.speed = 1;
-        // Start the tween with a short delay
-        this.scene.time.delayedCall(700, () => {
-          // Delay of 250 milliseconds
-          this.speed = 9;
-          this.scene.tweens.add({
-            targets: this.sprite,
-            y: this.sprite.y - 300, // Move up
-            ease: "Power1",
-            duration: 400,
-            yoyo: true, // Move back down
-            onComplete: () => {
-              this.isJumping = false;
-              if (isMoving) {
-                this.sprite.anims.play(this.isRunning ? "run" : "walk", true);
-              } else {
-                this.sprite.anims.play("idle", true);
-              }
-            },
-          });
-        });
-      } else {
-        // Normal jump animation when only space is pressed
-        this.sprite.anims.play("jump", true);
-        this.scene.tweens.add({
-          targets: this.sprite,
-          y: this.sprite.y - 200, // Move up
-          ease: "Power1",
-          duration: 300,
-          yoyo: true, // Move back down
-          onComplete: () => {
-            this.isJumping = false;
-            this.sprite.anims.play("idle", true);
-          },
-        });
+    // Handle movement
+    if (isMoving && !this.isJumping) {
+      if (this.sprite.body.isSleeping) {
+        this.sprite.setAwake();
       }
-      return; // Skip the rest of the update logic while jumping
+
+      const walkDuration = currentTime - this.walkStartTime;
+      this.isRunning = walkDuration > this.runThreshold;
+
+      let moveSpeed = this.isRunning ? 7 : 3; // Running or walking speed
+      if (this.cursors.left.isDown) {
+        this.sprite.setVelocityX(-moveSpeed); // Move left
+        this.sprite.flipX = true; // Flip sprite to left
+      } else if (this.cursors.right.isDown) {
+        this.sprite.setVelocityX(moveSpeed); // Move right
+        this.sprite.flipX = false; // Flip sprite to right
+      }
+
+      if (!this.isWalking) {
+        this.isWalking = true;
+        this.walkStartTime = currentTime;
+      }
+
+      // Play the appropriate walking or running animation
+      this.sprite.anims.play(this.isRunning ? "run" : "walk", true);
+    } else if (!isMoving && this.isWalking && !this.isJumping) {
+      if (this.isWalking) {
+        this.isWalking = false;
+        this.sprite.setVelocityX(0); // Stop
+        this.sprite.anims.play("idle", true); // Play idle animation
+      }
     }
+
+    // Set the player speed for external use (e.g., camera zoom)
+    this.speed = Math.abs(this.sprite.body.velocity.x);
+
+   //Probabilistic Jump 
 
     // Skip walking and running logic if jumping
     if (this.isJumping) {
       return;
+    }
+
+    // Reset jump forward flag and resume walking/running animation once the player has landed
+    if (!this.isJumping && this.isJumpingForward) {
+      this.isJumpingForward = false;
+      if (isMoving) {
+        this.sprite.anims.play(this.isRunning ? "run" : "walk", true);
+      }
     }
 
     // Walk or run based on duration of key press
@@ -196,6 +267,18 @@ class Player {
         this.sprite.anims.play(isRunning ? "run" : "walk", true);
         this.sprite.flipX = false; // Flip sprite to right
       }
+    }
+    
+     // Check if the player is running and call probabilisticJump
+  if (this.isRunning) {
+    this.probabilisticJump(0.001,isJumping,isMoving); // 1% chance to jump every frame
+  }
+    
+    // Update debug information if debug mode is on
+    if (this.debugMode && this.debugText) {
+      const x = Math.round(this.sprite.x);
+      const y = Math.round(this.sprite.y);
+      //console.log(`X: ${x}, Y: ${y}`);
     }
   }
 }
